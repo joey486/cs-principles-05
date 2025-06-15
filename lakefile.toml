@@ -1,0 +1,10 @@
+name = "targil5"
+version = "0.1.0"
+defaultTargets = ["targil5"]
+
+[[lean_lib]]
+name = "Targil5"
+
+[[lean_exe]]
+name = "targil5"
+root = "Main"
