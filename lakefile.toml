@@ -1,6 +1,7 @@
 name = "targil5"
 version = "0.1.0"
 defaultTargets = ["targil5"]
+keywords = ["compiler", "jack", "vm"]
 
 [[lean_lib]]
 name = "Targil5"
