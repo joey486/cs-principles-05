@@ -1,6 +1,8 @@
 import Targil5.Basic
 import Targil5.AST
 
+open JackCompiler
+
 namespace Targil5
 
 -- Simple XML node representation
@@ -28,6 +30,7 @@ def String.dropWhile (s : String) (p : Char → Bool) : String :=
 
 def String.isWhitespace (c : Char) : Bool :=
   c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
 
 -- Helper function to find substring position
 def String.findSubstring (s : String) (sub : String) : Option String.Pos :=
@@ -122,7 +125,18 @@ where
       .ok (Expression.binaryOp leftExpr op rightExpr)
     | _ => .error s!"Invalid binary expression: {toString content}"
 
-def parseStatement (xml : XMLNode) : Except String Statement :=
+mutual
+
+partial def parseStatements : List XMLNode → Except String (List Statement)
+  | [] => pure []
+  | (x :: xs) => do
+      let stmt ← parseStatement x
+      let rest ← parseStatements xs
+      pure (stmt :: rest)
+
+
+
+partial  def parseStatement (xml : XMLNode) : Except String Statement :=
   match xml with
   | .element "letStatement" content => parseLetStatement content
   | .element "ifStatement" content => parseIfStatement content
@@ -157,30 +171,30 @@ where
   parseIfStatement (content : List XMLNode) : Except String Statement :=
     match content with
     | [.element "keyword" [.text "if"],
-       .element "symbol" [.text "("],
-       condition,
-       .element "symbol" [.text ")"],
-       .element "symbol" [.text "{"],
-       .element "statements" thenStatements,
-       .element "symbol" [.text "}"]] => do
+        .element "symbol" [.text "("],
+        condition,
+        .element "symbol" [.text ")"],
+        .element "symbol" [.text "{"],
+        .element "statements" thenStatements,
+        .element "symbol" [.text "}"]] => do
       let condExpr ← parseExpression condition
-      let thenStmts ← thenStatements.mapM parseStatement
+      let thenStmts ← parseStatements thenStatements
       .ok (.ifStatement condExpr thenStmts none)
     | [.element "keyword" [.text "if"],
-       .element "symbol" [.text "("],
-       condition,
-       .element "symbol" [.text ")"],
-       .element "symbol" [.text "{"],
-       .element "statements" thenStatements,
-       .element "symbol" [.text "}"],
-       .element "keyword" [.text "else"],
-       .element "symbol" [.text "{"],
-       .element "statements" elseStatements,
-       .element "symbol" [.text "}"]] => do
+        .element "symbol" [.text "("],
+        condition,
+        .element "symbol" [.text ")"],
+        .element "symbol" [.text "{"],
+        .element "statements" thenStatements,
+        .element "symbol" [.text "}"],
+        .element "keyword" [.text "else"],
+        .element "symbol" [.text "{"],
+        .element "statements" elseStatements,
+        .element "symbol" [.text "}"]] => do
       let condExpr ← parseExpression condition
-      let thenStmts ← thenStatements.mapM parseStatement
-      let elseStmts ← elseStatements.mapM parseStatement
-      .ok (Statement.ifStatement condExpr thenStmts (some elseStmts))
+      let thenStmts ← parseStatements thenStatements
+      let elseStmts ← parseStatements elseStatements
+      .ok (.ifStatement condExpr thenStmts (some elseStmts))
     | _ => .error s!"Invalid if statement: {toString content}"
 
   parseWhileStatement (content : List XMLNode) : Except String Statement :=
@@ -214,5 +228,8 @@ where
       let expression ← parseExpression expr
       .ok (Statement.returnStatement (some expression))
     | _ => .error s!"Invalid return statement: {toString content}"
+
+
+end
 
 end Targil5
