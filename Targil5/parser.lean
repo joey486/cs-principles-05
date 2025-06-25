@@ -2,6 +2,8 @@ import Lean
 import Std
 open System
 
+namespace Parser
+
 -- Define a token type
 structure Token where
   tokenType : String
@@ -489,3 +491,5 @@ def parser (input : String) : String :=
   match ExceptT.run (parseClass 0) |>.run tokens with
   | (Except.ok result, _) => String.intercalate "\n" result
   | (Except.error err, _) => s!"Parser error: {err}"
+
+end Parser
