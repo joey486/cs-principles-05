@@ -179,25 +179,38 @@ def function (name : String) (nLocals : Nat) : VMWriter Unit :=
 def ret : VMWriter Unit :=
   emit "return"
 
--- ─── HELPERS (STUBS) ───────────────────────────────────────────────────
--- Fixed helper functions to replace the stubs
+-- Fixed helper functions
 
-def extractFunctionName (children : List XMLNode) : String :=
-  let rec findFunctionName (nodes : List XMLNode) (className : String) : String :=
+def extractClassName (children : List XMLNode) : String :=
+  let rec findClassName (nodes : List XMLNode) : String :=
     match nodes with
-    | [] => "Unknown.unknown"
-    | (XMLNode.elem "identifier" [XMLNode.text name]) :: _ =>
-      -- First identifier after "function" keyword should be the function name
-      s!"{className}.{name}"
+    | (XMLNode.elem "keyword" [XMLNode.text "class"]) ::
+      (XMLNode.elem "identifier" [XMLNode.text name]) :: _ =>
+      name
     | (XMLNode.elem _ subChildren) :: rest =>
-      match findFunctionName subChildren className with
-      | "Unknown.unknown" => findFunctionName rest className
+      match findClassName subChildren with
+      | "Unknown" => findClassName rest
       | found => found
-    | _ :: rest => findFunctionName rest className
+    | _ :: rest => findClassName rest
+    | [] => "Unknown"
+  findClassName children
 
-  -- First, find the class name from the parent context
-  let className := "Main" -- You might want to pass this as a parameter
-  findFunctionName children className
+def extractFunctionName (children : List XMLNode) (className : String) : String :=
+  let rec findFunctionName (nodes : List XMLNode) : String :=
+    match nodes with
+    | (XMLNode.elem "keyword" [XMLNode.text "function"]) ::
+      (XMLNode.elem "keyword" _) :: -- return type (void, int, etc.)
+      (XMLNode.elem "identifier" [XMLNode.text name]) :: _ =>
+      name
+    | (XMLNode.elem _ subChildren) :: rest =>
+      match findFunctionName subChildren with
+      | "unknown" => findFunctionName rest
+      | found => found
+    | _ :: rest => findFunctionName rest
+    | [] => "unknown"
+
+  let funcName := findFunctionName children
+  s!"{className}.{funcName}"
 
 def countLocalVars (children : List XMLNode) : Nat :=
   -- Count variables in a single varDec (handles "int i, sum;" case)
@@ -205,13 +218,24 @@ def countLocalVars (children : List XMLNode) : Nat :=
     let rec countIdentifiers (nodes : List XMLNode) (count : Nat) (foundType : Bool) : Nat :=
       match nodes with
       | [] => count
-      | (XMLNode.elem "keyword" _) :: rest =>
-        countIdentifiers rest count true -- Found type keyword like "int"
-      | (XMLNode.elem "identifier" _) :: rest =>
+      | (XMLNode.elem "keyword" [XMLNode.text typ]) :: rest =>
+        if typ == "var" then
+          countIdentifiers rest count false -- Skip "var" keyword
+        else
+          countIdentifiers rest count true -- Found type keyword like "int"
+      | (XMLNode.elem "identifier" [XMLNode.text _]) :: (XMLNode.elem "symbol" [XMLNode.text ","]) :: rest =>
+        -- Found identifier followed by comma, so it's a variable
+        countIdentifiers rest (count + 1) foundType
+      | (XMLNode.elem "identifier" [XMLNode.text _]) :: (XMLNode.elem "symbol" [XMLNode.text ";"]) :: rest =>
+        -- Found identifier followed by semicolon, so it's the last variable
+        countIdentifiers rest (count + 1) foundType
+      | (XMLNode.elem "identifier" [XMLNode.text _]) :: rest =>
         if foundType then
+          -- This is a variable name
           countIdentifiers rest (count + 1) foundType
         else
-          countIdentifiers rest count foundType -- This might be the type name like "Array"
+          -- This might be a type name like "Array"
+          countIdentifiers rest count true
       | _ :: rest => countIdentifiers rest count foundType
 
     countIdentifiers varDecChildren 0 false
@@ -230,65 +254,90 @@ def countLocalVars (children : List XMLNode) : Nat :=
 
 -- ─── CODE GENERATOR ────────────────────────────────────────────────────
 
-partial def vmGen (node : XMLNode) (symTable : SymbolTable) : VMWriter SymbolTable :=
+-- Updated vmGen function with proper class name extraction
+partial def vmGen (node : XMLNode) (symTable : SymbolTable) (className : String := "") : VMWriter SymbolTable :=
   match node with
   | XMLNode.elem "class" children => do
+    let clsName := extractClassName children
     let mut st := symTable
     for c in children do
       match c with
       | XMLNode.elem "subroutineDec" _ =>
-        st ← vmGen c st
+        st ← vmGen c st clsName
       | _ => pure ()
     return st
 
   | XMLNode.elem "subroutineDec" children => do
     let st := SymbolTable.startSubroutine symTable
-    let funcName := extractFunctionName children
+    let funcName := extractFunctionName children className
     let nLocals := countLocalVars children
     function funcName nLocals
+
+    -- Process parameter list and variable declarations first
+    let mut stWithVars := st
     for c in children do
       match c with
-      | XMLNode.elem "statements" _ =>
-        let _ ← vmGen c st
+      | XMLNode.elem "parameterList" _ =>
+        -- TODO: Process parameters and add to symbol table
         pure ()
+      | XMLNode.elem "subroutineBody" bodyChildren =>
+        for bc in bodyChildren do
+          match bc with
+          | XMLNode.elem "varDec" _ =>
+            -- TODO: Process variable declarations and add to symbol table
+            pure ()
+          | XMLNode.elem "statements" _ =>
+            let _ ← vmGen bc stWithVars className
+            pure ()
+          | _ => pure ()
       | _ => pure ()
-    return st
+    return stWithVars
 
-  | XMLNode.elem "letStatement" _ => do
-    emit "// let statement"
+  | XMLNode.elem "letStatement" children => do
+    -- TODO: Implement let statement compilation
+    emit "// let statement - TODO"
     return symTable
 
-  | XMLNode.elem "doStatement" _ => do
-    emit "// do statement"
+  | XMLNode.elem "doStatement" children => do
+    -- TODO: Implement do statement compilation
+    emit "// do statement - TODO"
+    pop "temp" 0  -- Pop and ignore return value
     return symTable
 
-  | XMLNode.elem "returnStatement" _ => do
-    emit "// return statement"
-    ret
+  | XMLNode.elem "returnStatement" children => do
+    match children with
+    | [] =>
+      push "constant" 0  -- Push 0 for void return
+      ret
+    | _ =>
+      -- TODO: Compile return expression
+      emit "// return expression - TODO"
+      ret
     return symTable
 
-  | XMLNode.elem "ifStatement" _ => do
-    emit "// if statement"
+  | XMLNode.elem "ifStatement" children => do
+    -- TODO: Implement if statement compilation
+    emit "// if statement - TODO"
     return symTable
 
-  | XMLNode.elem "whileStatement" _ => do
-    emit "// while statement"
+  | XMLNode.elem "whileStatement" children => do
+    -- TODO: Implement while statement compilation
+    emit "// while statement - TODO"
     return symTable
 
   | XMLNode.elem "statements" children => do
     let mut st := symTable
     for c in children do
-      st ← vmGen c st
+      st ← vmGen c st className
     return st
 
   | XMLNode.elem _ children => do
     let mut st := symTable
     for c in children do
-      st ← vmGen c st
+      st ← vmGen c st className
     return st
 
   | XMLNode.text _ =>
     return symTable
-
 
 end VMGenerator
