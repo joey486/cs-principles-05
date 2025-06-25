@@ -8,3 +8,5 @@ name = "Targil5"
 [[lean_exe]]
 name = "targil5"
 root = "Main"
+supportInterpreter = true
+moreLinkArgs = ["-Wl,--subsystem=console"]

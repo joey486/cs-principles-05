@@ -4,11 +4,11 @@ open String
 
 namespace VMGenerator
 
--- Define XMLNode here (since Parser is missing)
+-- Define XMLNode for simple recursive parsing
 inductive XMLNode where
   | elem : String → List XMLNode → XMLNode
   | text : String → XMLNode
-  deriving Repr
+  deriving Repr, Nonempty
 
 -- ─── SYMBOL TABLE ─────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ namespace SymbolTable
 def HashMap.findD {α β} [BEq α] [Hashable α] (m : HashMap α β) (key : α) (default : β) : β :=
   match m.get? key with
   | some v => v
-  | none   => default
+  | none => default
 
 abbrev Kind := String
 abbrev Scope := SymbolTable
@@ -85,6 +85,7 @@ def indexOf? (st : SymbolTable) (name : String) : Option Nat :=
 
 end SymbolTable
 
+-- ─── SIMPLE XML PARSER ─────────────────────────────────────────────────
 
 partial def parseTag (line : String) : Option String :=
   let trimmed := line.trim
@@ -94,7 +95,7 @@ partial def parseTag (line : String) : Option String :=
     if tagName.length > 0 then some tagName else none
   else none
 
-unsafe def parseXMLLines (lines : List String) (indent : Nat := 0) : (XMLNode × List String) :=
+partial def parseXMLLines (lines : List String) (indent : Nat := 0) : (XMLNode × List String) :=
   match lines with
   | [] => (XMLNode.text "", [])
   | l :: rest =>
@@ -105,7 +106,6 @@ unsafe def parseXMLLines (lines : List String) (indent : Nat := 0) : (XMLNode ×
     else
       let trimmed := l.trim
       if trimmed.startsWith "</" then
-        -- Closing tag, return to previous level
         (XMLNode.text "", lines)
       else match parseTag l with
       | some tag =>
@@ -122,80 +122,9 @@ unsafe def parseXMLLines (lines : List String) (indent : Nat := 0) : (XMLNode ×
         let (children, remLines) := parseChildren rest []
         (XMLNode.elem tag children, remLines)
       | none =>
-        -- Text node or malformed line
         (XMLNode.text trimmed, rest)
 
-
-
-partial def vmGen (node : XMLNode) (symTable : SymbolTable) : VMWriter SymbolTable :=
-  match node with
-  | XMLNode.elem "class" children => do
-      let mut st := symTable
-      for c in children do
-        match c with
-        | XMLNode.elem "subroutineDec" _ =>
-          st ← vmGen c st
-        | _ => pure ()
-      return st
-
-  | XMLNode.elem "subroutineDec", children, symTable => do
-    let st := startSubroutine symTable
-    let funcName := extractFunctionName children -- You'll implement this
-    let nLocals := countLocalVars children       -- You'll implement this
-    function funcName nLocals
-    for c in children do
-      match c with
-      | XMLNode.elem "statements", _ =>
-          let _ ← vmGen c st
-          pure ()
-      | _ => pure ()
-    return st
-
-  | XMLNode.elem "letStatement", _, symTable => do
-    -- Placeholder: actual implementation depends on variable kind, index, and expression
-    emit "// let statement"
-    return symTable
-
-  | XMLNode.elem "doStatement", _, symTable => do
-    emit "// do statement"
-    return symTable
-
-  | XMLNode.elem "returnStatement", _, symTable => do
-    emit "// return statement"
-    ret
-    return symTable
-
-  | XMLNode.elem "ifStatement", _, symTable => do
-    emit "// if statement"
-    return symTable
-
-  | XMLNode.elem "whileStatement", _, symTable => do
-    emit "// while statement"
-    return symTable
-
-  | XMLNode.elem "statements", children, symTable => do
-    let mut st := symTable
-    for c in children do
-      st ← vmGen c st
-    return st
-
-  | XMLNode.elem _, children, symTable => do
-    -- Generic fallback for other nodes
-    let mut st := symTable
-    for c in children do
-      st ← vmGen c st
-    return st
-
-  | XMLNode.text _, symTable => return symTable
-
--- Helper stubs — you'll need to implement these properly
-def extractFunctionName (children : List XMLNode) : String :=
-  "Main.f"  -- replace with actual parsing
-
-def countLocalVars (children : List XMLNode) : Nat :=
-  0         -- count <varDec> elements inside <subroutineBody>
-
--- ─── VM WRITER ────────────────────────────────────────────────────────
+-- ─── VM WRITER ─────────────────────────────────────────────────────────
 
 abbrev VMWriter := StateT (List String) Id
 
@@ -228,5 +157,76 @@ def function (name : String) (nLocals : Nat) : VMWriter Unit :=
 
 def ret : VMWriter Unit :=
   emit "return"
+
+-- ─── HELPERS (STUBS) ───────────────────────────────────────────────────
+
+def extractFunctionName (children : List XMLNode) : String :=
+  "Main.f" -- stub
+
+def countLocalVars (children : List XMLNode) : Nat :=
+  0 -- stub
+
+-- ─── CODE GENERATOR ────────────────────────────────────────────────────
+
+partial def vmGen (node : XMLNode) (symTable : SymbolTable) : VMWriter SymbolTable :=
+  match node with
+  | XMLNode.elem "class" children => do
+    let mut st := symTable
+    for c in children do
+      match c with
+      | XMLNode.elem "subroutineDec" _ =>
+        st ← vmGen c st
+      | _ => pure ()
+    return st
+
+  | XMLNode.elem "subroutineDec" children => do
+    let st := SymbolTable.startSubroutine symTable
+    let funcName := extractFunctionName children
+    let nLocals := countLocalVars children
+    function funcName nLocals
+    for c in children do
+      match c with
+      | XMLNode.elem "statements" _ =>
+        let _ ← vmGen c st
+        pure ()
+      | _ => pure ()
+    return st
+
+  | XMLNode.elem "letStatement" _ => do
+    emit "// let statement"
+    return symTable
+
+  | XMLNode.elem "doStatement" _ => do
+    emit "// do statement"
+    return symTable
+
+  | XMLNode.elem "returnStatement" _ => do
+    emit "// return statement"
+    ret
+    return symTable
+
+  | XMLNode.elem "ifStatement" _ => do
+    emit "// if statement"
+    return symTable
+
+  | XMLNode.elem "whileStatement" _ => do
+    emit "// while statement"
+    return symTable
+
+  | XMLNode.elem "statements" children => do
+    let mut st := symTable
+    for c in children do
+      st ← vmGen c st
+    return st
+
+  | XMLNode.elem _ children => do
+    let mut st := symTable
+    for c in children do
+      st ← vmGen c st
+    return st
+
+  | XMLNode.text _ =>
+    return symTable
+
 
 end VMGenerator
