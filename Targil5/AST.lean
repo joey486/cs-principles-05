@@ -26,6 +26,14 @@ inductive SubroutineKind where
   | constructor | function | method
 deriving Repr, BEq
 
+inductive SymbolKind where
+  | static
+  | field
+  | argument
+  | local
+deriving Repr, BEq
+
+
 structure VarDeclaration where
   type : JackType
   names : List String

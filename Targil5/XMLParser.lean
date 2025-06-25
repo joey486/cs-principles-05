@@ -165,7 +165,7 @@ where
        .element "symbol" [.text "}"]] => do
       let condExpr ← parseExpression condition
       let thenStmts ← thenStatements.mapM parseStatement
-      .ok (Statement.ifStatement condExpr thenStmts none)
+      .ok (.ifStatement condExpr thenStmts none)
     | [.element "keyword" [.text "if"],
        .element "symbol" [.text "("],
        condition,

@@ -2,91 +2,102 @@ import Targil5.Basic
 import Targil5.AST
 import Targil5.VMCommands
 import Targil5.CodeGenState
+import Targil5.ExpressionGenerator
 
 namespace JackCompiler
 
--- Generate VM code for expressions
-def generateExpressionCode (expr : Expression) (state : CodeGenState) : Except String (List VMCommand × CodeGenState) :=
-  match expr with
-  | .intConstant value =>
-    .ok ([.push "constant" value.natAbs], state)
-  | .stringConstant value =>
-    -- String handling requires OS library calls
+mutual
+
+def generateStatementsCode (stmts : List Statement) (state : CodeGenState) : Except String (List VMCommand × CodeGenState) :=
+  stmts.foldlM (fun (commands, st) stmt => do
+    let (stmtCommands, newState) ← generateStatementCode stmt st
+    .ok (commands ++ stmtCommands, newState)
+  ) ([], state)
+
+
+def generateStatementCode (stmt : Statement) (state : CodeGenState) : Except String (List VMCommand × CodeGenState) :=
+  match stmt with
+  | .letStatement varName arrayIndex value => do
+    let (valueCommands, state1) ← generateExpressionCode value state
+    match arrayIndex with
+    | none =>
+      match state1.symbolTable.lookup varName with
+      | some varInfo =>
+        let segment := match varInfo.kind with
+          | .static => "static"
+          | .field => "this"
+          | .argument => "argument"
+          | .local => "local"
+        .ok (valueCommands ++ [.pop segment varInfo.index], state1)
+      | none => .error s!"Undefined variable: {varName}"
+    | some index => do
+      let (indexCommands, state2) ← generateExpressionCode index state1
+      match state2.symbolTable.lookup varName with
+      | some varInfo =>
+        let segment := match varInfo.kind with
+          | .static => "static"
+          | .field => "this"
+          | .argument => "argument"
+          | .local => "local"
+        let commands := indexCommands ++ [
+          .push segment varInfo.index,
+          .add
+        ] ++ valueCommands ++ [
+          .pop "temp" 0,
+          .pop "pointer" 1,
+          .push "temp" 0,
+          .pop "that" 0
+        ]
+        .ok (commands, state2)
+      | none => .error s!"Undefined array: {varName}"
+  | .ifStatement condition thenStmts elseStmts => do
+    let (condCommands, state1) ← generateExpressionCode condition state
+    let (elseLabel, state2) := state1.newLabel "IF_ELSE"
+    let (endLabel, state3) := state2.newLabel "IF_END"
+    let (thenCommands, state4) ← generateStatementsCode thenStmts state3
+    let (elseCommands, state5) ← match elseStmts with
+      | some stmts => generateStatementsCode stmts state4
+      | none => .ok ([], state4)
+    let commands := condCommands ++ [
+      .not,
+      .ifGoto elseLabel
+    ] ++ thenCommands ++ [
+      .goto endLabel,
+      .label elseLabel
+    ] ++ elseCommands ++ [
+      .label endLabel
+    ]
+    .ok (commands, state5)
+  | .whileStatement condition body => do
+    let (startLabel, state1) := state.newLabel "WHILE_START"
+    let (endLabel, state2) := state1.newLabel "WHILE_END"
+    let (condCommands, state3) ← generateExpressionCode condition state2
+    let (bodyCommands, state4) ← generateStatementsCode body state3
     let commands := [
-      .push "constant" value.length,
-      .call "String.new" 1
-    ] ++ (value.toList.map fun c => [.push "constant" c.toNat, .call "String.appendChar" 2]).join
-    .ok (commands, state)
-  | .keywordConstant "true" =>
-    .ok ([.push "constant" 0, .not], state)
-  | .keywordConstant "false" =>
-    .ok ([.push "constant" 0], state)
-  | .keywordConstant "null" =>
-    .ok ([.push "constant" 0], state)
-  | .keywordConstant "this" =>
-    .ok ([.push "pointer" 0], state)
-  | .varName name => do
-    match state.symbolTable.lookup name with
-    | some varInfo =>
-      let segment := match varInfo.kind with
-        | .static => "static"
-        | .field => "this"
-        | .argument => "argument"
-        | .local => "local"
-      .ok ([.push segment varInfo.index], state)
-    | none => .error s!"Undefined variable: {name}"
-  | .arrayAccess arrayName index => do
-    let (indexCommands, state1) ← generateExpressionCode index state
-    match state1.symbolTable.lookup arrayName with
-    | some varInfo =>
-      let segment := match varInfo.kind with
-        | .static => "static"
-        | .field => "this"
-        | .argument => "argument"
-        | .local => "local"
-      let commands := indexCommands ++ [
-        .push segment varInfo.index,
-        .add,
-        .pop "pointer" 1,
-        .push "that" 0
-      ]
-      .ok (commands, state1)
-    | none => .error s!"Undefined array: {arrayName}"
-  | .unaryOp "-" expr => do
-    let (exprCommands, state1) ← generateExpressionCode expr state
-    .ok (exprCommands ++ [.neg], state1)
-  | .unaryOp "~" expr => do
-    let (exprCommands, state1) ← generateExpressionCode expr state
-    .ok (exprCommands ++ [.not], state1)
-  | .binaryOp left op right => do
-    let (leftCommands, state1) ← generateExpressionCode left state
-    let (rightCommands, state2) ← generateExpressionCode right state1
-    let opCommand := match op with
-      | "+" => [.add]
-      | "-" => [.sub]
-      | "*" => [.call "Math.multiply" 2]
-      | "/" => [.call "Math.divide" 2]
-      | "&" => [.and]
-      | "|" => [.or]
-      | "<" => [.lt]
-      | ">" => [.gt]
-      | "=" => [.eq]
-      | _ => []
-    .ok (leftCommands ++ rightCommands ++ opCommand, state2)
-  | .subroutineCall className subroutineName args => do
-    let (argCommands, state1) ← generateArgumentsCode args state
-    let fullName := match className with
-      | some cls => s!"{cls}.{subroutineName}"
-      | none => s!"{state.className}.{subroutineName}"
-    let numArgs := args.length
-    .ok (argCommands ++ [.call fullName numArgs], state1)
-  | _ => .error s!"Unsupported expression: {repr expr}"
+      .label startLabel
+    ] ++ condCommands ++ [
+      .not,
+      .ifGoto endLabel
+    ] ++ bodyCommands ++ [
+      .goto startLabel,
+      .label endLabel
+    ]
+    .ok (commands, state4)
+  | .doStatement call => do
+    let (callCommands, state1) ← generateExpressionCode call state
+    .ok (callCommands ++ [.pop "temp" 0], state1) -- Discard return value
+  | .returnStatement value => do
+    match value with
+    | some expr => do
+      let (exprCommands, state1) ← generateExpressionCode expr state
+      .ok (exprCommands ++ [.return], state1)
+    | none =>
+      .ok ([.push "constant" 0, .return], state) -- Return 0 for void functions
 
 where
-  generateArgumentsCode (args : List Expression) (state : CodeGenState) : Except String (List VMCommand × CodeGenState) :=
-    args.foldlM (fun (commands, st) arg => do
-      let (argCommands, newState) ← generateExpressionCode arg st
-      .ok (commands ++ argCommands, newState)
+  generateStatementsCode (stmts : List Statement) (state : CodeGenState) : Except String (List VMCommand × CodeGenState) :=
+    stmts.foldlM (fun (commands, st) stmt => do
+      let (stmtCommands, newState) ← generateStatementCode stmt st
+      .ok (commands ++ stmtCommands, newState)
     ) ([], state)
-
-end JackCompiler
+end

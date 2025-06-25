@@ -15,7 +15,7 @@ def generateExpressionCode (expr : Expression) (state : CodeGenState) : Except S
     let commands := [
       .push "constant" value.length,
       .call "String.new" 1
-    ] ++ (value.toList.map fun c => [.push "constant" c.toNat, .call "String.appendChar" 2]).join
+    ] ++ (value.toList.map fun c => [.push "constant" c.toNat, .call "String.appendChar" 2]).flatten
     .ok (commands, state)
   | .keywordConstant "true" =>
     .ok ([.push "constant" 0, .not], state)
