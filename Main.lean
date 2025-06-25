@@ -14,7 +14,20 @@ open System
 open Parser
 open VMGenerator
 
--- Stub for VM generation function: replace with your actual VM generator logic
+-- Debug: print XML structure (IO version)
+partial def printXMLNode (node : XMLNode) (indent : String := "") : IO Unit :=
+  match node with
+  | XMLNode.elem tag children => do
+    IO.println s!"{indent}<{tag}> ({children.length} children)"
+    for child in children do
+      printXMLNode child (indent ++ "  ")
+    IO.println s!"{indent}</{tag}>"
+  | XMLNode.text content => do
+    if content.trim.length > 0 then
+      IO.println s!"{indent}TEXT: '{content.trim}'"
+    else
+      pure ()
+
 -- Wrapper: parse XML text to XMLNode tree
 def parseXML (input : String) : VMGenerator.XMLNode :=
   let lines := input.splitOn "\n"
@@ -22,7 +35,7 @@ def parseXML (input : String) : VMGenerator.XMLNode :=
   node
 
 -- VM generation entry: takes XML string, parses and generates VM code lines
-def generateVMfromXML (xmlText : String) : List String :=
+def generateVMFromXML (xmlText : String) : List String :=
   let rootNode := parseXML xmlText
   let initSymTable := SymbolTable.empty
   let (_, vmLines) := (VMGenerator.vmGen rootNode initSymTable).run []
@@ -33,9 +46,21 @@ def generateVMfromXML (xmlText : String) : List String :=
   and returns the list of VM instructions.
 -/
 def processXMLFile (filePath : FilePath) : IO (List String) := do
+  IO.println s!"DEBUG: Reading file {filePath}"
   let content ← IO.FS.readFile filePath
-  let parsedXML := parser content
-  let vmCommands := generateVMfromXML parsedXML
+  IO.println s!"DEBUG: File content length: {content.length}"
+  IO.println s!"DEBUG: First 200 chars: {content.take 200}"
+
+  -- Debug: Show parsed XML structure
+  let rootNode := parseXML content
+  IO.println "DEBUG: Parsed XML structure:"
+  printXMLNode rootNode
+
+  let vmCommands := generateVMFromXML content
+  IO.println s!"DEBUG: Generated {vmCommands.length} VM lines:"
+  for line in vmCommands do
+    IO.println s!"  {line}"
+
   return vmCommands
 
 /--
@@ -45,17 +70,26 @@ def processXMLFile (filePath : FilePath) : IO (List String) := do
 def writeAllFilesToVM (dirPath : FilePath) : IO Unit := do
   let dirName := dirPath.fileName.getD "output"
   let outputFile := dirPath / s!"{dirName}.vm"
+  IO.println s!"DEBUG: Output file will be: {outputFile}"
+
   let files ← FilePath.readDir dirPath
   let xmlFiles := files.filter (·.path.extension == some "xml")
+  IO.println s!"DEBUG: Found {xmlFiles.size} XML files"
 
   let mut allLines : List String := []
 
   for file in xmlFiles do
     IO.println s!"Processing {file.path.fileName.getD ""}..."
     let vmLines ← processXMLFile file.path
+    IO.println s!"DEBUG: Got {vmLines.length} VM lines from this file"
     allLines := allLines ++ vmLines
 
-  let finalOutput := String.intercalate "\n" (allLines.filter (· ≠ "")) ++ "\n"
+  IO.println s!"DEBUG: Total VM lines collected: {allLines.length}"
+  let nonEmptyLines := allLines.filter (· ≠ "")
+  IO.println s!"DEBUG: Non-empty VM lines: {nonEmptyLines.length}"
+
+  let finalOutput := String.intercalate "\n" nonEmptyLines ++ "\n"
+  IO.println s!"DEBUG: Final output length: {finalOutput.length}"
   IO.FS.writeFile outputFile finalOutput
   IO.println s!"Translation complete. Output written to {outputFile}."
 

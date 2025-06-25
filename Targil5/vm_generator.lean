@@ -85,7 +85,7 @@ def indexOf? (st : SymbolTable) (name : String) : Option Nat :=
 
 end SymbolTable
 
--- ─── SIMPLE XML PARSER ─────────────────────────────────────────────────
+-- ───  XML PARSER  ─────────────────────────────────────────────────
 
 partial def parseTag (line : String) : Option String :=
   let trimmed := line.trim
@@ -101,10 +101,13 @@ partial def parseXMLLines (lines : List String) (indent : Nat := 0) : (XMLNode �
   | l :: rest =>
     let spaceCount := l.length - l.trimLeft.length
     let lineIndent := spaceCount / 2
+
+    -- If this line has less indentation than expected, we're done with this level
     if lineIndent < indent then
       (XMLNode.text "", lines)
     else
       let trimmed := l.trim
+      -- If this is a closing tag, we're done
       if trimmed.startsWith "</" then
         (XMLNode.text "", lines)
       else match parseTag l with
@@ -114,15 +117,33 @@ partial def parseXMLLines (lines : List String) (indent : Nat := 0) : (XMLNode �
           match ls with
           | [] => (acc.reverse, [])
           | x :: xs =>
-            if x.trim == closingTag then
+            let xTrimmed := x.trim
+            if xTrimmed == closingTag then
               (acc.reverse, xs)
+            else if xTrimmed.startsWith "</" then
+              -- If we hit any closing tag, stop parsing children
+              (acc.reverse, ls)
             else
-              let (child, rem) := parseXMLLines ls (indent + 1)
-              parseChildren rem (child :: acc)
+              let xSpaceCount := x.length - x.trimLeft.length
+              let xLineIndent := xSpaceCount / 2
+              -- Only parse as child if indentation is greater than current
+              if xLineIndent > indent then
+                let (child, rem) := parseXMLLines ls (indent + 1)
+                match rem with
+                | [] => (acc.reverse, [])
+                | _ => parseChildren rem (child :: acc)
+              else
+                -- If indentation is not greater, we're done with children
+                (acc.reverse, ls)
         let (children, remLines) := parseChildren rest []
         (XMLNode.elem tag children, remLines)
       | none =>
-        (XMLNode.text trimmed, rest)
+        -- Handle text content
+        if trimmed.length > 0 then
+          (XMLNode.text trimmed, rest)
+        else
+          -- Skip empty lines
+          parseXMLLines rest indent
 
 -- ─── VM WRITER ─────────────────────────────────────────────────────────
 
@@ -159,12 +180,53 @@ def ret : VMWriter Unit :=
   emit "return"
 
 -- ─── HELPERS (STUBS) ───────────────────────────────────────────────────
+-- Fixed helper functions to replace the stubs
 
 def extractFunctionName (children : List XMLNode) : String :=
-  "Main.f" -- stub
+  let rec findFunctionName (nodes : List XMLNode) (className : String) : String :=
+    match nodes with
+    | [] => "Unknown.unknown"
+    | (XMLNode.elem "identifier" [XMLNode.text name]) :: _ =>
+      -- First identifier after "function" keyword should be the function name
+      s!"{className}.{name}"
+    | (XMLNode.elem _ subChildren) :: rest =>
+      match findFunctionName subChildren className with
+      | "Unknown.unknown" => findFunctionName rest className
+      | found => found
+    | _ :: rest => findFunctionName rest className
+
+  -- First, find the class name from the parent context
+  let className := "Main" -- You might want to pass this as a parameter
+  findFunctionName children className
 
 def countLocalVars (children : List XMLNode) : Nat :=
-  0 -- stub
+  -- Count variables in a single varDec (handles "int i, sum;" case)
+  let countVarsInDec (varDecChildren : List XMLNode) : Nat :=
+    let rec countIdentifiers (nodes : List XMLNode) (count : Nat) (foundType : Bool) : Nat :=
+      match nodes with
+      | [] => count
+      | (XMLNode.elem "keyword" _) :: rest =>
+        countIdentifiers rest count true -- Found type keyword like "int"
+      | (XMLNode.elem "identifier" _) :: rest =>
+        if foundType then
+          countIdentifiers rest (count + 1) foundType
+        else
+          countIdentifiers rest count foundType -- This might be the type name like "Array"
+      | _ :: rest => countIdentifiers rest count foundType
+
+    countIdentifiers varDecChildren 0 false
+
+  let rec countVarDecs (nodes : List XMLNode) : Nat :=
+    match nodes with
+    | [] => 0
+    | (XMLNode.elem "varDec" varChildren) :: rest =>
+      let varCount := countVarsInDec varChildren
+      varCount + countVarDecs rest
+    | (XMLNode.elem _ subChildren) :: rest =>
+      countVarDecs subChildren + countVarDecs rest
+    | _ :: rest => countVarDecs rest
+
+  countVarDecs children
 
 -- ─── CODE GENERATOR ────────────────────────────────────────────────────
 
