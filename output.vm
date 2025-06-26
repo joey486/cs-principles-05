@@ -1,16 +1,36 @@
 function Unknown.unknown 0
-// let statement - TODO
-// let statement - TODO
-// let statement - TODO
-// while statement - TODO
-// let statement - TODO
-// let statement - TODO
-// while statement - TODO
-// do statement - TODO
+// let statement - unsupported format
+// let statement - unsupported format
+// let statement - unsupported format
+label WHILE_EXP0
+// Complex term - TODO
+push constant 0
+// Complex term - TODO
+push constant 0
+not
+if-goto WHILE_END1
+// let statement - unsupported format
+// let statement - unsupported format
+goto WHILE_EXP0
+label WHILE_END1
+// let statement - unsupported format
+// let statement - unsupported format
+label WHILE_EXP2
+// Complex term - TODO
+push constant 0
+// Complex term - TODO
+push constant 0
+not
+if-goto WHILE_END3
+// let statement - unsupported format
+// let statement - unsupported format
+goto WHILE_EXP2
+label WHILE_END3
+// do statement - unsupported format
 pop temp 0
-// do statement - TODO
+// do statement - unsupported format
 pop temp 0
-// do statement - TODO
+// do statement - unsupported format
 pop temp 0
-// return expression - TODO
+// return statement - unsupported format
 return
