@@ -11,7 +11,6 @@ import Targil5
 namespace Main
 
 open System
-open Parser
 open VMGenerator
 
 -- Debug: print XML structure (IO version)
