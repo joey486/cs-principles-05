@@ -3,10 +3,8 @@ function Unknown.unknown 0
 // let statement - unsupported format
 // let statement - unsupported format
 label WHILE_EXP0
-// Complex term - TODO
-push constant 0
-// Complex term - TODO
-push constant 0
+// Unhandled term
+// Unhandled term
 not
 if-goto WHILE_END1
 // let statement - unsupported format
@@ -16,10 +14,8 @@ label WHILE_END1
 // let statement - unsupported format
 // let statement - unsupported format
 label WHILE_EXP2
-// Complex term - TODO
-push constant 0
-// Complex term - TODO
-push constant 0
+// Unhandled term
+// Unhandled term
 not
 if-goto WHILE_END3
 // let statement - unsupported format
